@@ -38,17 +38,17 @@ class Controller:
 
     def get_message(self, keyType):
         if keyType == 'U':
-            return 'd 1000 0'
+            return 'd 100 0'
         elif keyType == 'R':
-            return 'd 1000 90'
+            return 'd 100 -90'
         elif keyType == 'L':
-            return 'd 1000 -90'
-        elif keyType == 'B':
-            return 'd -1000 0'
-        elif keyType == 'S':
-            return 's'
-        elif keyType == 'V':
+            return 'd 100 90'
+        elif keyType == 'D':
+            return 'd -100 0'
+        elif keyType == 'A':
             return 'v'
+        else:
+            return 's'
 
 class Connection:
     def __init__(self, conn, client_id, client_type):
@@ -68,10 +68,9 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         if type(payload) == str:
             payload = json.loads(payload)
 
-        client_type = payload.get('client_type')
+        client_type = payload.get('type')
         client_id = str(uuid.uuid4())
         connection = Connection(self, client_id, client_type)
-        self.connections.add(connection)
 
         if client_type == 'robot':
             # only allowing one robot
@@ -81,9 +80,19 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 self.robot_connection.clear()
                 self.robot_connection.add(connection)
 
-        message = json.dumps(
-            {'module': 'connections', 'operation': 'subscribeSuccess', 'payload': {'client_id': client_id}})
-        self.write_message(message)
+            message = json.dumps(
+                {'module': 'connections', 'operation': 'subscribeSuccess', 'payload': {'client_id': client_id}})
+            self.write_message(message)
+        elif client_type == 'controller':
+            self.connections.add(connection)
+            message = json.dumps(
+                {'module': 'connections', 'operation': 'subscribeSuccess', 'payload': {'client_id': client_id}})
+            self.write_message(message)
+
+            if len(self.connections) > 1:
+                for connection in self.connections:
+                    message = json.dumps(
+                        {'module': 'connections', 'operation': 'updateTotalConnections', 'payload': {'count': num_con}})
 
     def check_origin(self, origin):
         return True
@@ -95,11 +104,13 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         print("A client disconnected")
         for item in self.connections:
             print(item.client_id)
-            if item.client_type == 'robot' and len(self.robot_connection) > 0:
+            if item.client_type == 'robot' and len(self.robot_connection) > 0 and item.conn == self:
                 self.robot_connection.remove(item)
-            if item.conn == self:
+                print("Removed Robot ID: {}", item.client_id)
+                return
+            elif item.client_type == 'controller' and item.conn == self:
                 self.connections.remove(item)
-                print("Removed item")
+                print("Removed Controller ID: {}", item.client_id)
                 return
 
     def get_connection(self, id):
@@ -117,6 +128,11 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                     robot = next(iter(self.robot_connection))
                     self.controller.call_method(message_dict.get('operation'), message_dict.get('payload').get('key'),
                                                 robot.conn)
+                if len(self.connections) > 1:
+                    for item in self.connections:
+                        if item.conn != self:
+                            item.conn.send_message(message)
+
             elif message_dict.get('module') == 'connections':
                 if message_dict.get('operation') == 'subscribe':
                     self.subscribe(message_dict)

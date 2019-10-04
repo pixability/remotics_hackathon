@@ -89,11 +89,12 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 {'module': 'connections', 'operation': 'subscribeSuccess', 'payload': {'client_id': client_id}})
             self.write_message(message)
 
-            if len(self.connections) > 1:
-                for connection in self.connections:
-                    message = json.dumps(
+            num_con = len(self.connections)
+            for connection in self.connections:
+                message = json.dumps(
                         {'module': 'connections', 'operation': 'updateTotalConnections', 'payload': {'count': num_con}})
-
+                self.write_message(message)
+                
     def check_origin(self, origin):
         return True
 
@@ -131,7 +132,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
                 if len(self.connections) > 1:
                     for item in self.connections:
                         if item.conn != self:
-                            item.conn.send_message(message)
+                            item.conn.write_message(message)
 
             elif message_dict.get('module') == 'connections':
                 if message_dict.get('operation') == 'subscribe':
